@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+<title>SHOP PROXY V10</title>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<style>
+:root { --bg:#0b0b12; --cyan:#00f2ff; --gold:#ffcc00; --card:#1a1a2e; --red:#ff4444; --vip:#ff00ff; }
+body { background:var(--bg); color:white; font-family:sans-serif; padding:10px; margin:0; }
+.box { background:var(--card); padding:15px; border-radius:12px; border:1px solid #2a2a40; margin-bottom:15px; }
+input,textarea { width:100%; padding:12px; margin:5px 0; border-radius:8px; border:1px solid #333; background:#000; color:#fff; }
+button { border:none; padding:12px; border-radius:8px; font-weight:800; cursor:pointer; width:100%; }
+.btn-main { background:var(--cyan); color:#000; }
+.btn-gold { background:var(--gold); color:#000; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.adm-sec { border:2px solid var(--red); padding:10px; border-radius:12px; margin-bottom:15px; display:none; }
+#qr-display { display:none; background:#fff; padding:15px; border-radius:15px; }
+table { width:100%; font-size:11px; border-collapse:collapse; }
+td,th { padding:8px 4px; border-bottom:1px solid #222; }
+.tag-vip { color:var(--vip); }
+</style>
+</head>
+<body>
+
+<div id="auth-ui" style="max-width:400px;margin:50px auto;">
+<div class="box">
+<input id="au" placeholder="Tài khoản">
+<input id="ap" type="password" placeholder="Mật khẩu">
+<div class="grid">
+<button class="btn-main" onclick="auth('login')">ĐĂNG NHẬP</button>
+<button onclick="auth('reg')">ĐĂNG KÝ</button>
+</div>
+</div>
+</div>
+
+<div id="shop-ui" style="display:none;max-width:500px;margin:auto">
+
+<div id="adm-box" class="adm-sec">
+<h4>ADMIN</h4>
+
+<div id="adm-pay-list"></div>
+<div id="adm-rs-list"></div>
+<table id="adm-user-list"></table>
+
+</div>
+
+<div class="box">
+<p><b id="u-id"></b> <span id="u-rank"></span> | <b id="u-bl">0</b>đ</p>
+<input id="n-amt" type="number">
+<button onclick="nap()">NẠP</button>
+<div id="qr-display">
+<img id="qr-img">
+<p id="txt-nd"></p>
+<button onclick="confirmNap()">OK</button>
+</div>
+</div>
+
+<div class="box">
+<h4>RESET KEY</h4>
+<input id="rs-key">
+<button onclick="sendRS()">GỬI</button>
+</div>
+
+<div class="box">
+<h4>SHOP</h4>
+<div class="grid">
+<button onclick="buy('ngay')">NGÀY</button>
+<button onclick="buy('tuan')">TUẦN</button>
+<button onclick="buy('thang')">THÁNG</button>
+<button onclick="buy('nam')">NĂM</button>
+</div>
+</div>
+
+<div class="box">
+<table><tbody id="h-list"></tbody></table>
+</div>
+
+</div>
+
+<script>
+const firebaseConfig={databaseURL:"https://shopmduy-default-rtdb.asia-southeast1.firebasedatabase.app"};
+firebase.initializeApp(firebaseConfig);
+const db=firebase.database();
+
+let curU,curUID,isVIP=false;
+
+function auth(type){
+const u=au.value.trim().toLowerCase(),p=ap.value;
+if(type=='reg'){
+db.ref('users/'+u).set({password:p,balance:0,role:'user',isVIP:false,uid:"U"+Date.now()});
+}else{
+db.ref('users/'+u).once('value',s=>{
+const d=s.val();
+if(d&&d.password===p){
+curU=u;curUID=d.uid;
+auth-ui.style.display='none';
+shop-ui.style.display='block';
+u-id.innerText=u;
+if(d.role==='admin') adm-box.style.display='block';
+
+db.ref('users/'+u+'/balance').on('value',b=>u-bl.innerText=(b.val()||0));
+
+init();
+}
+});
+}
+}
+
+function nap(){
+const amt=Number(n-amt.value);
+const nd=`NAP ${curU}`;
+qr-img.src=`https://img.vietqr.io/image/mbbank-0588807300000-compact2.png?amount=${amt}&addInfo=${nd}`;
+txt-nd.innerText=nd;
+qr-display.style.display='block';
+db.ref('bank_requests').push({user:curU,amount:amt});
+}
+
+function confirmNap(){qr-display.style.display='none'}
+
+function buy(t){
+db.ref('key_store/'+t).limitToFirst(1).once('value',snap=>{
+if(!snap.exists())return;
+let kID=Object.keys(snap.val())[0],kV=snap.val()[kID];
+db.ref('key_store/'+t+'/'+kID).remove();
+db.ref('history_pay/'+curUID).push({time:new Date().toLocaleString(),amount:"MUA",status:kV});
+alert(kV);
+});
+}
+
+function sendRS(){
+const k=document.getElementById('rs-key').value.trim();
+if(!k)return;
+db.ref('rs_requests').push({user:curU,uid:curUID,key:k,time:new Date().toLocaleString()});
+alert("Đã gửi");
+}
+
+function init(){
+
+db.ref('history_pay/'+curUID).on('value',h=>{
+h-list.innerHTML="";
+h.forEach(c=>{
+const i=c.val();
+h-list.innerHTML=`<tr><td>${i.time}</td><td>${i.amount}</td><td>${i.status}</td></tr>`+h-list.innerHTML;
+});
+});
+
+db.ref('bank_requests').on('value',s=>{
+adm-pay-list.innerHTML="";
+s.forEach(c=>{
+const r=c.val();
+adm-pay-list.innerHTML+=`<div>${r.user} ${r.amount}
+<button onclick="db.ref('users/${r.user}/balance').transaction(v=>(v||0)+${r.amount});db.ref('bank_requests/${c.key}').remove()">OK</button>
+<button onclick="db.ref('bank_requests/${c.key}').remove()">X</button>
+</div>`;
+});
+});
+
+db.ref('rs_requests').on('value',s=>{
+adm-rs-list.innerHTML="";
+s.forEach(c=>{
+const r=c.val();
+adm-rs-list.innerHTML+=`<div>${r.user} ${r.key}
+<button onclick="rsDone('${c.key}','${r.uid}','${r.key}')">OK</button>
+<button onclick="rsFail('${c.key}','${r.uid}','${r.key}')">X</button>
+</div>`;
+});
+});
+
+db.ref('users').on('value',s=>{
+adm-user-list.innerHTML="";
+s.forEach(c=>{
+const u=c.val();
+adm-user-list.innerHTML+=`<tr>
+<td>${c.key}</td>
+<td>${u.balance||0}</td>
+<td><button onclick="db.ref('users/${c.key}/isVIP').set(${!u.isVIP})">VIP</button></td>
+<td><button onclick="db.ref('users/${c.key}').remove()">X</button></td>
+</tr>`;
+});
+});
+
+}
+
+function rsDone(id,uid,key){
+db.ref('history_pay/'+uid).push({time:new Date().toLocaleString(),amount:"RS",status:"THÀNH CÔNG "+key});
+db.ref('rs_requests/'+id).remove();
+}
+
+function rsFail(id,uid,key){
+db.ref('history_pay/'+uid).push({time:new Date().toLocaleString(),amount:"RS",status:"TỪ CHỐI "+key});
+db.ref('rs_requests/'+id).remove();
+}
+</script>
+
+</body>
+</html>
